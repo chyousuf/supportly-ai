@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useInView } from '../hooks/useInView';
-import BackendShowcase from '../components/BackendShowcase';
 
 // --- Helper Components ---
 
@@ -266,13 +265,12 @@ export default function LandingPage() {
             </div>
 
             {/* Center (Desktop) */}
-            <div className="hidden md:flex items-center gap-6">
+            <div className="hidden md:flex items-center gap-7">
               <button onClick={() => scrollTo('features')} className="text-slate-600 hover:text-slate-900 font-medium transition-colors">Features</button>
               <button onClick={() => scrollTo('how-it-works')} className="text-slate-600 hover:text-slate-900 font-medium transition-colors">How It Works</button>
               <button onClick={() => scrollTo('integrations')} className="text-slate-600 hover:text-slate-900 font-medium transition-colors">Integrations</button>
-              <button onClick={() => scrollTo('backend')} className="text-slate-600 hover:text-slate-900 font-medium transition-colors">Backend</button>
               <button onClick={() => scrollTo('pricing')} className="text-slate-600 hover:text-slate-900 font-medium transition-colors">Pricing</button>
-              <Link to="/showcase" className="text-indigo-600 hover:text-indigo-700 font-bold transition-colors flex items-center gap-1.5 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 text-xs">
+              <Link to="/showcase" className="text-indigo-600 hover:text-indigo-700 font-bold transition-colors flex items-center gap-1.5 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100 text-xs">
                 <span>⚡ 30s Setup</span>
               </Link>
             </div>
@@ -915,11 +913,6 @@ export default function LandingPage() {
             <p className="text-xs text-slate-400 italic">Dashboard shown with sample data for illustration.</p>
           </div>
         </div>
-      </section>
-
-      {/* === SECTION: BACKEND ARCHITECTURE & GSAP SHOWCASE === */}
-      <section id="backend" className="py-20 bg-slate-900 border-t border-slate-800">
-        <BackendShowcase />
       </section>
 
       {/* === SECTION 8: PRICING === */}
