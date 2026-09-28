@@ -16,6 +16,7 @@ import Settings from './pages/dashboard/Settings'
 import RulesAndPermissions from './pages/dashboard/RulesAndPermissions'
 import SuperAdmin from './pages/dashboard/SuperAdmin'
 import WidgetShowcase from './pages/WidgetShowcase'
+import BackendArchitecturePage from './pages/BackendArchitecturePage'
 
 export default function App() {
   return (
@@ -26,6 +27,8 @@ export default function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/showcase" element={<WidgetShowcase />} />
             <Route path="/setup-widget" element={<WidgetShowcase />} />
+            <Route path="/backend-showcase" element={<BackendArchitecturePage />} />
+            <Route path="/backend-architecture" element={<BackendArchitecturePage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/dashboard" element={

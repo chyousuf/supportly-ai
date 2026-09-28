@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
+import BackendShowcase from '../components/BackendShowcase';
 
 export default function WidgetShowcase() {
   const { showToast } = useToast();
@@ -457,6 +458,11 @@ export default function WidgetShowcase() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* Backend Architecture & GSAP Showcase Section */}
+      <section className="py-20 bg-slate-900 border-t border-slate-800">
+        <BackendShowcase />
       </section>
 
       {/* Footer Banner */}
