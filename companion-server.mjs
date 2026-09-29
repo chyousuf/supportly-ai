@@ -584,16 +584,22 @@ const state = {
 };
 
 function sendJson(res, statusCode, data) {
-  res.writeHead(statusCode, {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Widget-Identifier'
-  });
+  if (res.headersSent) return;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Widget-Identifier, X-User-Role, X-Business-Id');
+  if (res.status && typeof res.json === 'function') {
+    return res.status(statusCode).json(data);
+  }
+  res.writeHead(statusCode);
   res.end(JSON.stringify(data));
 }
 
 function parseBody(req) {
+  if (req.body) {
+    return Promise.resolve(typeof req.body === 'string' ? JSON.parse(req.body) : req.body);
+  }
   return new Promise((resolve) => {
     let body = '';
     req.on('data', chunk => body += chunk);
@@ -607,18 +613,23 @@ function parseBody(req) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
-  const urlObj = new URL(req.url, `http://${req.headers.host}`);
+export async function handleRequest(req, res) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  const protocol = req.headers['x-forwarded-proto'] || 'http';
+  const rawPath = req.originalUrl || req.url || '/';
+  const urlObj = new URL(rawPath, `${protocol}://${host}`);
   const pathname = urlObj.pathname;
   const method = req.method;
 
   // Handle CORS Preflight
   if (method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Accept, X-Widget-Identifier'
-    });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, X-Widget-Identifier, X-User-Role, X-Business-Id');
+    if (res.status && typeof res.end === 'function') {
+      return res.status(204).end();
+    }
+    res.writeHead(204);
     return res.end();
   }
 
@@ -1597,8 +1608,13 @@ const server = http.createServer(async (req, res) => {
     console.error('Companion server error:', err);
     return sendJson(res, 500, { success: false, error: err.message });
   }
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`Supportly AI Companion Server running at http://localhost:${PORT}`);
-});
+export const server = http.createServer(handleRequest);
+
+const isMainModule = !process.env.VERCEL && (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('companion-server.mjs'));
+if (isMainModule) {
+  server.listen(PORT, () => {
+    console.log(`Supportly AI Companion Server running at http://localhost:${PORT}`);
+  });
+}
