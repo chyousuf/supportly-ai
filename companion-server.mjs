@@ -618,7 +618,17 @@ export async function handleRequest(req, res) {
   const protocol = req.headers['x-forwarded-proto'] || 'http';
   const rawPath = req.originalUrl || req.url || '/';
   const urlObj = new URL(rawPath, `${protocol}://${host}`);
-  const pathname = urlObj.pathname;
+  let pathname = urlObj.pathname;
+
+  // Reconstruct path if invoked via Vercel dynamic catch-all [...path]
+  if ((pathname.includes('[...path]') || pathname.endsWith('index.js')) && req.query?.path) {
+    if (Array.isArray(req.query.path)) {
+      pathname = '/api/' + req.query.path.join('/');
+    } else if (typeof req.query.path === 'string') {
+      pathname = '/api/' + req.query.path;
+    }
+  }
+
   const method = req.method;
 
   // Handle CORS Preflight
