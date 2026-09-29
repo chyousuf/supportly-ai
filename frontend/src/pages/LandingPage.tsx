@@ -217,24 +217,25 @@ export default function LandingPage() {
     }
   }, [chatMessages]);
 
-  // Hero Chat Animation Sequence
+  // Hero Chat Animation Sequence (Guarded against duplicate calls in React 18)
   useEffect(() => {
-    const sequence = async () => {
-      // Clear
-      setHeroMessages([]);
-      
-      await new Promise(r => setTimeout(r, 800));
-      setHeroMessages([{ id: 'h1', sender: 'assistant', text: 'Hi there! 👋 How can I help you today?' }]);
-      
-      await new Promise(r => setTimeout(r, 1500));
-      setHeroMessages(prev => [...prev, { id: 'h2', sender: 'user', text: 'How long does shipping take?' }]);
-      
-      await new Promise(r => setTimeout(r, 500));
-      setHeroMessages(prev => [...prev, { id: 'h3', sender: 'assistant', text: '', isTyping: true }]);
-      
-      await new Promise(r => setTimeout(r, 1500));
+    let isMounted = true;
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
+
+    const schedule = (fn: () => void, delay: number) => {
+      const id = setTimeout(() => {
+        if (isMounted) fn();
+      }, delay);
+      timeouts.push(id);
+    };
+
+    setHeroMessages([]);
+    schedule(() => setHeroMessages([{ id: 'h1', sender: 'assistant', text: 'Hi there! 👋 How can I help you today?' }]), 600);
+    schedule(() => setHeroMessages(prev => [...prev.filter(m => m.id !== 'h2'), { id: 'h2', sender: 'user', text: 'How long does shipping take?' }]), 1800);
+    schedule(() => setHeroMessages(prev => [...prev.filter(m => m.id !== 'h3'), { id: 'h3', sender: 'assistant', text: '', isTyping: true }]), 2400);
+    schedule(() => {
       setHeroMessages(prev => [
-        ...prev.filter(m => !m.isTyping),
+        ...prev.filter(m => !m.isTyping && m.id !== 'h4'),
         { 
           id: 'h4', 
           sender: 'assistant', 
@@ -242,8 +243,12 @@ export default function LandingPage() {
           source: 'Shipping Policy'
         }
       ]);
+    }, 3800);
+
+    return () => {
+      isMounted = false;
+      timeouts.forEach(clearTimeout);
     };
-    sequence();
   }, []);
 
   const scrollTo = (id: string) => {
@@ -488,7 +493,7 @@ export default function LandingPage() {
                 <svg className="w-6 h-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
               </div>
               <h3 className="text-lg font-semibold text-slate-900 mt-6">Content-Grounded Answers</h3>
-              <p className="text-slate-600 mt-2 leading-relaxed">Your assistant only uses information from your approved knowledge base — FAQs, policies, and product details. No hallucinated answers.</p>
+              <p className="text-slate-600 mt-2 leading-relaxed">Answers grounded in your approved content, with human escalation when information is missing.</p>
             </AnimatedSection>
 
             <AnimatedSection delay={200} className="bg-white rounded-2xl border border-slate-200 p-8 hover:shadow-lg hover:border-violet-200 transition-all duration-300 group">
@@ -1160,25 +1165,21 @@ export default function LandingPage() {
             </div>
 
             <div>
-              <h4 className="text-white font-semibold mb-4">Company</h4>
+              <h4 className="text-white font-semibold mb-4">Company & Legal</h4>
               <ul className="space-y-3 text-sm">
-                <li><a href="#" title="Coming soon" className="hover:text-white transition-colors">About</a></li>
-                <li><a href="#" title="Coming soon" className="hover:text-white transition-colors">Documentation</a></li>
-                <li><a href="#" title="Coming soon" className="hover:text-white transition-colors">Privacy Policy</a></li>
-                <li><a href="#" title="Coming soon" className="hover:text-white transition-colors">Terms of Service</a></li>
+                <li><Link to="/setup-widget" className="hover:text-white transition-colors">Documentation & Setup</Link></li>
+                <li><Link to="/backend-architecture" className="hover:text-white transition-colors">System Architecture</Link></li>
+                <li><button onClick={() => alert('Supportly AI Privacy Commitment: Enterprise customer conversation data is strictly isolated per tenant, never sold, and never used to train public foundational LLM models.')} className="hover:text-white transition-colors text-left">Privacy Policy</button></li>
+                <li><button onClick={() => alert('Supportly AI Terms of Service: Standard SaaS license. Uptime SLA: 99.9%. Rate limits apply per plan subscription.')} className="hover:text-white transition-colors text-left">Terms of Service</button></li>
               </ul>
             </div>
             
           </div>
           
           <div className="border-t border-slate-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm">
-            <p>© 2024 Supportly AI. All rights reserved.</p>
+            <p>© {new Date().getFullYear()} Supportly AI. All rights reserved.</p>
             <div className="flex gap-6">
-              <a href="#" className="hover:text-white transition-colors">
-                <span className="sr-only">Twitter</span>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/></svg>
-              </a>
-              <a href="#" className="hover:text-white transition-colors">
+              <a href="https://github.com/chyousuf/supportly-ai" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors" aria-label="GitHub Repository">
                 <span className="sr-only">GitHub</span>
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.09.39-1.988 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.379.203 2.394.1 2.647.64.695 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd"/></svg>
               </a>

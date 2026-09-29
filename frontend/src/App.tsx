@@ -44,7 +44,11 @@ export default function App() {
               <Route path="integrations" element={<Integrations />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="settings" element={<Settings />} />
-              <Route path="super-admin" element={<SuperAdmin />} />
+              <Route path="super-admin" element={
+                <ProtectedRoute requiredRole="super_admin">
+                  <SuperAdmin />
+                </ProtectedRoute>
+              } />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

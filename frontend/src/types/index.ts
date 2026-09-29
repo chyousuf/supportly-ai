@@ -1,8 +1,12 @@
+export type UserRole = 'super_admin' | 'admin' | 'agent' | 'viewer';
+
 export interface Business {
   id: number;
   name: string;
   email: string;
   domain: string;
+  role?: UserRole;
+  public_widget_key?: string;
   logo_url: string | null;
   timezone: string;
   created_at: string;
@@ -16,15 +20,29 @@ export interface AuthResponse {
 export interface KnowledgeSource {
   id: number;
   business_id: number;
-  type: 'faq' | 'url' | 'document';
+  type: 'faq' | 'url' | 'document' | 'catalog';
   title: string;
   content: string;
   url: string | null;
   file_path: string | null;
-  status: 'active' | 'processing' | 'error';
-  metadata: Record<string, unknown> | null;
+  status: 'approved' | 'draft' | 'conflicted' | 'processing' | 'error' | 'active';
+  freshness?: string;
+  origin?: string;
+  extracted_chunks?: string[];
+  metadata?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface KnowledgeGap {
+  id: number;
+  business_id: number;
+  question: string;
+  frequency: number;
+  last_asked: string;
+  suggested_answer: string;
+  status: 'pending_review' | 'approved';
+  related_conversation_ids?: string[];
 }
 
 export interface Conversation {
@@ -32,10 +50,15 @@ export interface Conversation {
   business_id: number;
   customer_name: string | null;
   customer_email: string | null;
-  status: 'ai_active' | 'needs_human' | 'human_active' | 'closed';
+  status: 'ai_active' | 'needs_human' | 'human_active' | 'closed' | 'reopened';
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
   channel: string;
+  unread_count?: number;
   assigned_to: number | null;
-  metadata: Record<string, unknown> | null;
+  ai_summary?: string;
+  waiting_time?: string;
+  last_activity?: string;
+  metadata?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
   messages?: Message[];
@@ -47,14 +70,17 @@ export interface Message {
   conversation_id: string;
   role: 'customer' | 'assistant' | 'agent' | 'system';
   content: string;
-  sources: SourceReference[] | null;
-  metadata: Record<string, unknown> | null;
+  sources?: SourceReference[] | null;
+  is_internal_note?: boolean;
+  author?: string;
+  metadata?: Record<string, unknown> | null;
   created_at: string;
 }
 
 export interface SourceReference {
   title: string;
   type: string;
+  excerpt?: string;
 }
 
 export interface Feedback {
@@ -79,6 +105,7 @@ export interface TeamMember {
 export interface WidgetConfig {
   id: number;
   business_id: number;
+  public_widget_key?: string;
   assistant_name: string;
   welcome_message: string;
   brand_color: string;
@@ -94,20 +121,80 @@ export interface BusinessHours {
   hours: Record<string, { open: string; close: string } | null>;
 }
 
+export interface WidgetStatus {
+  business_id: string;
+  public_key: string;
+  installed: boolean;
+  last_connected_at: string | null;
+  connected_origin: string | null;
+  ping_count: number;
+  troubleshooting_tips: string[];
+}
+
+export interface ProductItem {
+  id: string;
+  sku: string;
+  title: string;
+  price: string;
+  numeric_price: number;
+  inStock: boolean;
+  inventory_count: number;
+  category: string;
+  url?: string;
+  last_synced?: string;
+}
+
+export interface CatalogSyncState {
+  platform: string;
+  store_url: string;
+  status: 'idle' | 'queued' | 'processing' | 'completed' | 'partial' | 'failed';
+  progress: number;
+  scheduled_enabled: boolean;
+  schedule_interval: string;
+  next_scheduled_run: string;
+  last_successful_sync: string;
+  imported_count: number;
+  discovered_count: number;
+  duplicate_count: number;
+  failed_count: number;
+  products: ProductItem[];
+}
+
 export interface AnalyticsOverview {
+  timeframe_days?: number;
   total_conversations: number;
   total_messages: number;
-  ai_answered: number;
+  ai_resolved_count?: number;
+  ai_resolution_rate?: number;
   human_handoffs: number;
+  human_handoff_rate?: number;
+  avg_first_human_response_mins?: number;
+  unanswered_questions_count?: number;
   avg_satisfaction: number;
+  customer_feedback_total?: number;
+  helpful_count?: number;
+  unhelpful_count?: number;
+  estimated_tokens_used?: number;
+  estimated_ai_cost_usd?: string;
   conversations_by_day: { date: string; count: number }[];
   recent_conversations: Conversation[];
+}
+
+export interface AuditLog {
+  id: string;
+  business_id: number;
+  actor: string;
+  action: string;
+  description: string;
+  ip_address: string;
+  created_at: string;
 }
 
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
   message?: string;
+  error?: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -117,8 +204,6 @@ export interface PaginatedResponse<T> {
   per_page: number;
   total: number;
 }
-
-export type UserRole = 'super_admin' | 'admin' | 'agent' | 'viewer';
 
 export interface AIRule {
   id: number;
@@ -160,4 +245,3 @@ export interface Tenant {
   message_limit: number;
   created_at: string;
 }
-

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../utils/api';
-import { AIRule, RolePermissions, PermissionDefinition, ApiResponse, UserRole } from '../../types';
+import { AIRule, RolePermissions, PermissionDefinition, ApiResponse, UserRole, AuditLog } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
 
 const DEFAULT_PERMISSION_DEFINITIONS: PermissionDefinition[] = [
@@ -101,10 +101,19 @@ const DEFAULT_AI_RULES: AIRule[] = [
 ];
 
 export default function RulesAndPermissions() {
-  const [activeTab, setActiveTab] = useState<'rules' | 'roles'>('rules');
+  const [activeTab, setActiveTab] = useState<'rules' | 'roles' | 'audit'>('rules');
   const [rules, setRules] = useState<AIRule[]>(DEFAULT_AI_RULES);
   const [rolePerms, setRolePerms] = useState<Record<UserRole, RolePermissions>>(DEFAULT_ROLE_PERMISSIONS);
   const [selectedRole, setSelectedRole] = useState<UserRole>('admin');
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+
+  // Order verification sandbox state
+  const [orderId, setOrderId] = useState('ORD-9824');
+  const [orderEmail, setOrderEmail] = useState('alex@example.com');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpRequested, setOtpRequested] = useState(false);
+  const [verifiedOrderResult, setVerifiedOrderResult] = useState<any>(null);
+  const [otpLoading, setOtpLoading] = useState(false);
   
   // Rule Modal state
   const [showRuleModal, setShowRuleModal] = useState(false);
@@ -123,7 +132,19 @@ export default function RulesAndPermissions() {
   useEffect(() => {
     fetchRules();
     fetchPermissions();
+    fetchAuditLogs();
   }, []);
+
+  const fetchAuditLogs = async () => {
+    try {
+      const res = await api.get<ApiResponse<AuditLog[]>>('/api/audit-logs');
+      if (res && res.data) {
+        setAuditLogs(res.data);
+      }
+    } catch {
+      // Fallback
+    }
+  };
 
   const fetchRules = async () => {
     try {
@@ -258,6 +279,43 @@ export default function RulesAndPermissions() {
     }
   };
 
+  const handleRequestOtp = async () => {
+    setOtpLoading(true);
+    setVerifiedOrderResult(null);
+    try {
+      const res = await api.post<ApiResponse<any>>('/api/orders/request-verification', {
+        order_id: orderId,
+        email: orderEmail
+      });
+      setOtpRequested(true);
+      if (res.data?.sample_code) setOtpCode(res.data.sample_code);
+      showToast(res.message || 'OTP verification code generated', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to request OTP', 'error');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    setOtpLoading(true);
+    try {
+      const res = await api.post<ApiResponse<any>>('/api/orders/verify', {
+        order_id: orderId,
+        email: orderEmail,
+        code: otpCode
+      });
+      if (res.data?.verified) {
+        setVerifiedOrderResult(res.data.order);
+        showToast('Order authenticated. Private shipping tracking revealed.', 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Invalid or expired verification code', 'error');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   const categories = Array.from(new Set(DEFAULT_PERMISSION_DEFINITIONS.map(p => p.category)));
 
   return (
@@ -320,6 +378,27 @@ export default function RulesAndPermissions() {
             <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
           </svg>
           Role Permissions Matrix (RBAC)
+        </button>
+
+        <button
+          onClick={() => setActiveTab('audit')}
+          className={`py-3 px-6 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+            activeTab === 'audit'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          Administrative Audit Trail
+          <span className="ml-1.5 px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 font-bold">
+            {auditLogs.length}
+          </span>
         </button>
       </div>
 
@@ -404,6 +483,101 @@ export default function RulesAndPermissions() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* SENSITIVE DATA ENFORCEMENT & OTP VERIFICATION SANDBOX */}
+          <div className="mt-8 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <span>🔒</span> Sensitive Action Enforcement: Customer Order Verification Protocol
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  AI prompt rules provide guidance, but backend authorization policies strictly enforce security. Customer email + order ID alone cannot grant tracking access without authenticated 4-digit OTP verification.
+                </p>
+              </div>
+              <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-full border border-indigo-200 uppercase">
+                Backend Enforced
+              </span>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Order Identifier</label>
+                <input
+                  type="text"
+                  value={orderId}
+                  onChange={(e) => setOrderId(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Customer Email</label>
+                <input
+                  type="email"
+                  value={orderEmail}
+                  onChange={(e) => setOrderEmail(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={handleRequestOtp}
+                  disabled={otpLoading}
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition"
+                >
+                  {otpLoading ? 'Generating OTP...' : '1. Request Customer OTP'}
+                </button>
+              </div>
+            </div>
+
+            {otpRequested && (
+              <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-3">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                  <span className="text-xs text-indigo-900 font-semibold">
+                    ✉️ Enter 4-Digit Verification Code sent to {orderEmail}:
+                  </span>
+                  <span className="text-[11px] font-mono text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                    Test Sandbox Code: <strong>8492</strong>
+                  </span>
+                </div>
+
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                    placeholder="e.g. 8492"
+                    className="w-32 px-3 py-2 text-center font-mono font-bold tracking-widest text-sm bg-white border border-indigo-300 rounded-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleVerifyOtp}
+                    disabled={otpLoading || !otpCode}
+                    className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition"
+                  >
+                    2. Authenticate & Disclose Order
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {verifiedOrderResult && (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-2 animate-fade-in">
+                <p className="font-bold flex items-center gap-1.5 text-emerald-950">
+                  <span>✓</span> Verification Successful — Private Order Details Disclosed:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
+                  <div>Status: <strong>{verifiedOrderResult.status} ({verifiedOrderResult.carrier})</strong></div>
+                  <div>Tracking #: <strong className="font-mono">{verifiedOrderResult.tracking_number}</strong></div>
+                  <div className="sm:col-span-2">Address: <strong>{verifiedOrderResult.shipping_address}</strong></div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -520,6 +694,56 @@ export default function RulesAndPermissions() {
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: ADMINISTRATIVE AUDIT TRAIL */}
+      {activeTab === 'audit' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-slate-100">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Administrative Audit Trail</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Immutable compliance log of all configuration modifications, rule updates, and role permission adjustments.
+              </p>
+            </div>
+            <span className="px-2.5 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-full">
+              {auditLogs.length} Recorded Events
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider border-b border-slate-100">
+                  <th className="py-2.5 px-4">Event ID</th>
+                  <th className="py-2.5 px-4">Timestamp</th>
+                  <th className="py-2.5 px-4">Actor</th>
+                  <th className="py-2.5 px-4">Action</th>
+                  <th className="py-2.5 px-4">Change Description</th>
+                  <th className="py-2.5 px-4 text-right">IP Address</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {auditLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-slate-50">
+                    <td className="py-3 px-4 font-mono font-medium text-slate-500">{log.id}</td>
+                    <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                      {new Date(log.created_at).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 font-bold text-slate-900">{log.actor}</td>
+                    <td className="py-3 px-4">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                        {log.action}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-slate-700 max-w-xs">{log.description}</td>
+                    <td className="py-3 px-4 text-right font-mono text-slate-400">{log.ip_address}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

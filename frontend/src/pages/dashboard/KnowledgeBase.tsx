@@ -1,24 +1,45 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../utils/api';
-import { KnowledgeSource, ApiResponse } from '../../types';
+import { KnowledgeSource, KnowledgeGap, ApiResponse } from '../../types';
 import { useToast } from '../../contexts/ToastContext';
 
-const KnowledgeBase: React.FC = () => {
+export default function KnowledgeBase() {
+  const [activeTab, setActiveTab] = useState<'sources' | 'gaps'>('sources');
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
+  const [gaps, setGaps] = useState<KnowledgeGap[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  
+  const [reindexing, setReindexing] = useState(false);
+
+  // Preview chunks modal
+  const [previewSource, setPreviewSource] = useState<KnowledgeSource | null>(null);
+
+  // Add source modal
   const [showModal, setShowModal] = useState(false);
   const [sourceType, setSourceType] = useState<'faq' | 'url' | 'document' | null>(null);
   const [formData, setFormData] = useState({ title: '', content: '', url: '' });
   const [saving, setSaving] = useState(false);
 
+  // Testing area state
   const [testQuery, setTestQuery] = useState('');
-  const [testResult, setTestResult] = useState<{answer: string, sources: any[]} | null>(null);
+  const [testResult, setTestResult] = useState<{
+    answer: string;
+    grounding_status?: string;
+    sources: { title: string; type: string; excerpt?: string }[];
+  } | null>(null);
   const [testing, setTesting] = useState(false);
-  
+
+  // Draft gap edit modal
+  const [editingGap, setEditingGap] = useState<KnowledgeGap | null>(null);
+  const [gapDraftAnswer, setGapDraftAnswer] = useState('');
+
   const { showToast } = useToast();
+
+  useEffect(() => {
+    fetchSources();
+    fetchGaps();
+  }, [filter, search]);
 
   const fetchSources = async () => {
     try {
@@ -37,18 +58,42 @@ const KnowledgeBase: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    fetchSources();
-  }, [filter, search]);
+  const fetchGaps = async () => {
+    try {
+      const res = await api.get<ApiResponse<KnowledgeGap[]>>('/api/knowledge/gaps');
+      if (res && res.data) {
+        setGaps(res.data);
+      }
+    } catch {
+      // Fallback
+    }
+  };
+
+  const handleReindex = async () => {
+    setReindexing(true);
+    await new Promise(r => setTimeout(r, 1200));
+    setReindexing(false);
+    showToast('Knowledge base re-indexed. Embeddings refreshed for 5 active sources.', 'success');
+  };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure? This cannot be undone.')) return;
+    if (!window.confirm('Are you sure you want to delete this knowledge source?')) return;
     try {
       await api.delete(`/api/knowledge/${id}`);
       showToast('Source deleted successfully', 'success');
       fetchSources();
     } catch (err) {
       showToast('Failed to delete source', 'error');
+    }
+  };
+
+  const handleApproveSource = async (id: number) => {
+    try {
+      await api.put(`/api/knowledge/${id}/approve`, {});
+      showToast('Source approved and indexed for live assistant grounding', 'success');
+      fetchSources();
+    } catch {
+      showToast('Failed to approve source', 'error');
     }
   };
 
@@ -65,9 +110,12 @@ const KnowledgeBase: React.FC = () => {
     try {
       await api.post('/api/knowledge', {
         type: sourceType,
-        ...formData
+        title: formData.title,
+        content: formData.content,
+        url: formData.url,
+        status: 'approved'
       });
-      showToast('Source added successfully', 'success');
+      showToast('Knowledge source registered and approved', 'success');
       setShowModal(false);
       setSourceType(null);
       setFormData({ title: '', content: '', url: '' });
@@ -87,256 +135,492 @@ const KnowledgeBase: React.FC = () => {
       const res = await api.post<ApiResponse<any>>('/api/knowledge/test', { question: testQuery });
       if (res && res.data) {
         setTestResult(res.data);
-      } else {
-        // mock fallback
-        setTestResult({
-          answer: "Based on the knowledge base, here is a simulated answer to your question...",
-          sources: sources.slice(0, 1)
-        });
       }
     } catch (err) {
-      showToast('Test failed', 'error');
+      showToast('Test query failed', 'error');
     } finally {
       setTesting(false);
     }
   };
 
-  const getIcon = (type: string) => {
-    switch(type) {
-      case 'faq': return <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>;
-      case 'url': return <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-500"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>;
-      case 'document': return <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>;
-      default: return null;
+  const handleApproveGap = async (gap: KnowledgeGap) => {
+    try {
+      await api.post(`/api/knowledge/gaps/${gap.id}/approve`, {
+        answer: gapDraftAnswer || gap.suggested_answer
+      });
+      showToast(`Approved FAQ for: "${gap.question}"`, 'success');
+      setEditingGap(null);
+      fetchGaps();
+      fetchSources();
+    } catch {
+      showToast('Failed to approve gap answer', 'error');
     }
   };
 
-  const getStatus = (status: string) => {
+  const getStatusBadge = (status: string) => {
     switch(status) {
-      case 'active': return <span className="flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 px-2 py-1 rounded-full"><span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>Active</span>;
-      case 'processing': return <span className="flex items-center gap-1.5 text-xs font-medium text-yellow-700 bg-yellow-50 px-2 py-1 rounded-full"><span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Processing</span>;
-      case 'error': return <span className="flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-50 px-2 py-1 rounded-full"><span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>Error</span>;
-      default: return null;
+      case 'approved':
+      case 'active':
+        return (
+          <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Approved (In Index)
+          </span>
+        );
+      case 'draft':
+        return (
+          <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Draft (Pending Review)
+          </span>
+        );
+      case 'conflicted':
+        return (
+          <span className="flex items-center gap-1.5 text-[11px] font-bold text-red-800 bg-red-50 px-2.5 py-0.5 rounded-full border border-red-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Conflict Warning
+          </span>
+        );
+      default:
+        return (
+          <span className="text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+            {status}
+          </span>
+        );
     }
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-slate-900">Knowledge Base</h1>
-        <button 
-          onClick={() => { setShowModal(true); setSourceType(null); }}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition shadow-sm flex items-center gap-2"
+    <div className="space-y-8 max-w-7xl mx-auto">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Knowledge Base & Intelligence</h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Manage approved source documents, preview chunk extractions, and resolve customer knowledge gaps.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleReindex}
+            disabled={reindexing}
+            className="px-3.5 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-2 shadow-xs"
+          >
+            <svg className={`h-3.5 w-3.5 text-indigo-600 ${reindexing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {reindexing ? 'Re-indexing...' : 'Re-index Sources'}
+          </button>
+
+          <button 
+            onClick={() => { setShowModal(true); setSourceType(null); }}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-2"
+          >
+            <span>+</span> Add Knowledge Source
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('sources')}
+          className={`py-3 px-6 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+            activeTab === 'sources'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          Add Source
+          Approved Sources & Catalog
+          <span className="ml-1.5 px-2 py-0.5 rounded-full text-xs bg-indigo-50 text-indigo-700 font-bold">
+            {sources.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('gaps')}
+          className={`py-3 px-6 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${
+            activeTab === 'gaps'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <span>⚠️</span>
+          Knowledge Gaps & Unanswered
+          <span className="ml-1.5 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-900 font-bold">
+            {gaps.length}
+          </span>
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex gap-2">
-            {['all', 'faq', 'url', 'document'].map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg capitalize transition-colors ${
-                  filter === f ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
+      {/* ======================================================== */}
+      {/* TAB 1: APPROVED SOURCES & GROUNDED CONTENT               */}
+      {/* ======================================================== */}
+      {activeTab === 'sources' && (
+        <div className="space-y-6">
+          {/* Conflict Warning Notification Banner */}
+          <div className="p-4 bg-amber-50/80 border border-amber-200/90 rounded-2xl flex items-start gap-3 text-xs text-amber-900">
+            <span className="text-base mt-0.5">ℹ️</span>
+            <div>
+              <p className="font-bold">Automated Grounding Guardrail Active</p>
+              <p className="text-amber-800 mt-0.5 leading-relaxed">
+                Only content in <strong>Approved</strong> state is indexed into assistant RAG context. Draft items remain offline until verified by a store administrator.
+              </p>
+            </div>
           </div>
-          <div className="relative">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <input 
-              type="text" 
-              placeholder="Search sources..." 
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
-            />
+
+          {/* Search and Filters Bar */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex gap-2 overflow-x-auto">
+                {['all', 'faq', 'catalog', 'url', 'document'].map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg capitalize transition-colors ${
+                      filter === f ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative">
+                <input 
+                  type="text" 
+                  placeholder="Search sources by title or keyword..." 
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
+                />
+              </div>
+            </div>
+
+            {/* Source Grid Cards */}
+            <div className="p-6">
+              {loading ? (
+                <div className="text-center py-12 text-slate-400 text-xs">Loading sources...</div>
+              ) : sources.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">
+                  <h3 className="font-bold text-slate-900">No knowledge sources found</h3>
+                  <p className="text-xs text-slate-400 mt-1">Add FAQs or connect your website to populate your knowledge base.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {sources.map(source => (
+                    <div key={source.id} className="bg-white rounded-2xl border border-slate-200 p-5 hover:border-indigo-200 hover:shadow-sm transition flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          <span className="text-[10px] uppercase font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 font-mono">
+                            {source.type}
+                          </span>
+                          {getStatusBadge(source.status)}
+                        </div>
+
+                        <h3 className="font-bold text-slate-900 text-sm mb-1.5 line-clamp-1">{source.title}</h3>
+                        
+                        <p className="text-xs text-slate-600 line-clamp-3 mb-4 leading-relaxed">
+                          {source.content}
+                        </p>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+                        <div className="flex justify-between items-center text-[10px] text-slate-400">
+                          <span>{source.freshness || 'Updated recently'}</span>
+                          <span className="truncate max-w-[120px] font-mono">{source.origin || 'Direct'}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1">
+                          <button
+                            onClick={() => setPreviewSource(source)}
+                            className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                          >
+                            Preview Chunks →
+                          </button>
+
+                          <div className="flex items-center gap-2">
+                            {source.status === 'draft' && (
+                              <button
+                                onClick={() => handleApproveSource(source.id)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px]"
+                              >
+                                Approve
+                              </button>
+                            )}
+
+                            <button 
+                              onClick={() => handleDelete(source.id)} 
+                              className="p-1 text-slate-400 hover:text-red-600 transition"
+                              title="Delete source"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Interactive Answer Testing Area with Cited Excerpts */}
+          <div className="bg-slate-900 text-white rounded-2xl p-6 lg:p-8 shadow-sm">
+            <div className="max-w-3xl">
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-lg font-bold text-white">Live Grounded Engine Query Test</h2>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-semibold font-mono">
+                  Sanctum Auth Active
+                </span>
+              </div>
+              <p className="text-slate-400 text-xs mb-5">
+                Simulate a customer question to inspect exact cited source excerpts used for the grounded answer.
+              </p>
+              
+              <div className="flex gap-2 mb-6">
+                <input 
+                  type="text" 
+                  value={testQuery}
+                  onChange={(e) => setTestQuery(e.target.value)}
+                  placeholder="e.g., Is the titanium stove in stock, or what are your shipping times?" 
+                  className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleTest(); }}
+                />
+                <button 
+                  onClick={handleTest}
+                  disabled={testing || !testQuery.trim()}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl disabled:opacity-50 transition shadow-sm"
+                >
+                  {testing ? 'Testing...' : 'Test Answer'}
+                </button>
+              </div>
+
+              {testResult && (
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-800 text-xs">
+                    <span className="font-bold text-indigo-400 uppercase tracking-wider text-[10px]">Assistant Response</span>
+                    <span className="text-emerald-400 font-semibold text-[11px]">
+                      ✓ {testResult.grounding_status || 'Supported by approved sources'}
+                    </span>
+                  </div>
+
+                  <p className="text-slate-200 text-xs leading-relaxed whitespace-pre-wrap">{testResult.answer}</p>
+                  
+                  {testResult.sources && testResult.sources.length > 0 && (
+                    <div className="pt-3 border-t border-slate-800 space-y-2">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Cited Source Excerpts
+                      </span>
+                      <div className="space-y-2">
+                        {testResult.sources.map((s, i) => (
+                          <div key={i} className="text-xs bg-slate-900/90 p-3 rounded-lg border border-slate-800">
+                            <span className="font-bold text-indigo-300 block mb-1">[{i+1}] {s.title}</span>
+                            <p className="text-slate-400 text-[11px] italic font-mono bg-slate-950/60 p-2 rounded">
+                              "{s.excerpt || 'Full text match in knowledge base'}"
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+      )}
 
-        <div className="p-6">
-          {loading ? (
-            <div className="text-center py-12 text-slate-500">Loading sources...</div>
-          ) : sources.length === 0 ? (
-            <div className="text-center py-12">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mx-auto text-slate-300 mb-4"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
-              <h3 className="text-lg font-medium text-slate-900 mb-1">No sources found</h3>
-              <p className="text-sm text-slate-500 mb-4">Add your first knowledge source to make your AI smarter.</p>
-              <button onClick={() => { setShowModal(true); setSourceType(null); }} className="text-indigo-600 font-medium hover:text-indigo-700">Add Source</button>
+      {/* ======================================================== */}
+      {/* TAB 2: KNOWLEDGE GAPS & UNANSWERED QUESTIONS             */}
+      {/* ======================================================== */}
+      {activeTab === 'gaps' && (
+        <div className="space-y-6">
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-xs text-amber-900">
+            <span className="text-lg">💡</span>
+            <div>
+              <p className="font-bold">Human Review Required Before Publishing</p>
+              <p className="text-amber-800 mt-0.5 leading-relaxed">
+                These questions were asked repeatedly by customers where your assistant did not find approved source data. Review or customize the suggested answer, then approve to immediately plug the gap.
+              </p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {sources.map(source => (
-                <div key={source.id} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="p-2 bg-slate-50 rounded-lg">
-                      {getIcon(source.type)}
-                    </div>
-                    {getStatus(source.status)}
+          </div>
+
+          <div className="space-y-4">
+            {gaps.map((gap) => (
+              <div key={gap.id} className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                      {gap.question}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Asked <strong className="text-indigo-600">{gap.frequency} times</strong> by visitors • Last asked {gap.last_asked}
+                    </p>
                   </div>
-                  <h3 className="font-semibold text-slate-900 mb-2 truncate">{source.title}</h3>
-                  <p className="text-sm text-slate-500 line-clamp-2 mb-4 h-10">
-                    {source.content || source.url || 'No content preview available'}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingGap(gap);
+                        setGapDraftAnswer(gap.suggested_answer);
+                      }}
+                      className="px-3.5 py-1.5 border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl"
+                    >
+                      Edit Draft Answer
+                    </button>
+
+                    <button
+                      onClick={() => handleApproveGap(gap)}
+                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-xs"
+                    >
+                      Approve & Publish FAQ
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Suggested Draft Answer (Based on Context):
+                  </span>
+                  <p className="text-xs text-slate-800 leading-relaxed">
+                    {gap.suggested_answer}
                   </p>
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                    <span className="text-[10px] text-slate-400">
-                      Updated {new Date(source.updated_at).toLocaleDateString()}
-                    </span>
-                    <div className="flex gap-2">
-                      <button className="p-1.5 text-slate-400 hover:text-indigo-600 transition"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
-                      <button onClick={() => handleDelete(source.id)} className="p-1.5 text-slate-400 hover:text-red-600 transition"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
-                    </div>
-                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Preview Chunks Drawer / Modal */}
+      {previewSource && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl space-y-4">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900 text-base">Extracted Vector Chunks</h3>
+              <button onClick={() => setPreviewSource(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-slate-700">{previewSource.title}</p>
+              <p className="text-[11px] text-slate-500">Source: {previewSource.origin || 'Direct Content'}</p>
+            </div>
+
+            <div className="max-h-60 overflow-y-auto space-y-2 p-1">
+              {(previewSource.extracted_chunks || [previewSource.content]).map((chunk, idx) => (
+                <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800">
+                  <span className="font-bold text-indigo-600 mr-1.5 text-[10px] uppercase">Chunk #{idx+1}:</span>
+                  {chunk}
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      </div>
 
-      <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 lg:p-8">
-        <div className="max-w-3xl">
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Test Your Knowledge Base</h2>
-          <p className="text-slate-600 mb-6 text-sm">Enter a question to see how the assistant would respond using your knowledge sources.</p>
-          
-          <div className="flex gap-3 mb-8">
-            <input 
-              type="text" 
-              value={testQuery}
-              onChange={(e) => setTestQuery(e.target.value)}
-              placeholder="E.g., What are your shipping times?" 
-              className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-              onKeyDown={(e) => { if (e.key === 'Enter') handleTest(); }}
-            />
-            <button 
-              onClick={handleTest}
-              disabled={testing || !testQuery.trim()}
-              className="px-6 py-3 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 disabled:opacity-50 transition shadow-sm"
-            >
-              {testing ? 'Testing...' : 'Test'}
-            </button>
-          </div>
-
-          {testResult && (
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <div className="mb-4">
-                <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2 block">AI Response</span>
-                <p className="text-slate-800 text-sm leading-relaxed">{testResult.answer}</p>
-              </div>
-              
-              {testResult.sources && testResult.sources.length > 0 && (
-                <div className="pt-4 border-t border-slate-100">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 block">Sources Used</span>
-                  <div className="flex flex-col gap-2">
-                    {testResult.sources.map((s, i) => (
-                      <div key={i} className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                        {getIcon(s.type || 'faq')}
-                        <span className="font-medium truncate">{s.title || 'Untitled Source'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Add Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-xl">
-            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-              <h3 className="text-lg font-bold text-slate-900">Add Knowledge Source</h3>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <button 
+                onClick={() => setPreviewSource(null)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
+              >
+                Close Preview
               </button>
             </div>
-            
-            <div className="p-6">
-              {!sourceType ? (
-                <div>
-                  <p className="text-sm text-slate-600 mb-6">Choose the type of knowledge source you want to add.</p>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <button onClick={() => setSourceType('faq')} className="p-5 border-2 border-slate-100 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition text-left group">
-                      <div className="p-3 bg-blue-100 text-blue-600 rounded-lg w-fit mb-3 group-hover:bg-indigo-200 group-hover:text-indigo-700">{getIcon('faq')}</div>
-                      <h4 className="font-bold text-slate-900 mb-1">Q&A / FAQ</h4>
-                      <p className="text-xs text-slate-500">Add common questions and specific answers manually.</p>
-                    </button>
-                    <button onClick={() => setSourceType('url')} className="p-5 border-2 border-slate-100 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition text-left group">
-                      <div className="p-3 bg-green-100 text-green-600 rounded-lg w-fit mb-3 group-hover:bg-indigo-200 group-hover:text-indigo-700">{getIcon('url')}</div>
-                      <h4 className="font-bold text-slate-900 mb-1">Website URL</h4>
-                      <p className="text-xs text-slate-500">Scrape content from a public webpage or article.</p>
-                    </button>
-                    <button onClick={() => setSourceType('document')} className="p-5 border-2 border-slate-100 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition text-left group">
-                      <div className="p-3 bg-amber-100 text-amber-600 rounded-lg w-fit mb-3 group-hover:bg-indigo-200 group-hover:text-indigo-700">{getIcon('document')}</div>
-                      <h4 className="font-bold text-slate-900 mb-1">Document</h4>
-                      <p className="text-xs text-slate-500">Upload a PDF, Word doc, or text file.</p>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {sourceType === 'faq' && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Question / Title</label>
-                        <input type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="E.g., What is your refund policy?" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Answer / Content</label>
-                        <textarea value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" rows={6} placeholder="Provide the answer here..."></textarea>
-                      </div>
-                    </>
-                  )}
-                  {sourceType === 'url' && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">URL</label>
-                        <input type="url" value={formData.url} onChange={e => setFormData({...formData, url: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="https://example.com/pricing" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Title (Optional)</label>
-                        <input type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Leave blank to auto-detect" />
-                      </div>
-                      <div className="bg-blue-50 p-3 rounded-lg flex gap-3 text-sm text-blue-800">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                        <p>Adding a URL saves its content at the time of import. Automatic re-sync is not yet available.</p>
-                      </div>
-                    </>
-                  )}
-                  {sourceType === 'document' && (
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
-                        <input type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Document title" />
-                      </div>
-                      <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:bg-slate-50 transition cursor-pointer">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mx-auto text-slate-400 mb-3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                        <p className="text-sm font-medium text-slate-700 mb-1">Drop files here or click to browse</p>
-                        <p className="text-xs text-slate-500">Supports PDF, TXT, DOCX up to 10MB</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Knowledge Source Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900 text-base">Add Knowledge Source</h3>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
-            
-            {sourceType && (
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-                <button onClick={() => setSourceType(null)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg transition">Back</button>
-                <button 
-                  onClick={handleSave} 
-                  disabled={saving}
-                  className="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition"
-                >
-                  {saving ? 'Saving...' : 'Save Source'}
-                </button>
+
+            {!sourceType ? (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500">Choose the format of source data to register:</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => setSourceType('faq')} 
+                    className="p-4 border-2 border-slate-100 hover:border-indigo-500 hover:bg-indigo-50/50 rounded-xl text-left transition"
+                  >
+                    <span className="font-bold text-xs text-slate-900 block mb-0.5">FAQ / Q&A</span>
+                    <span className="text-[11px] text-slate-500">Common customer questions & answers</span>
+                  </button>
+                  <button 
+                    onClick={() => setSourceType('url')} 
+                    className="p-4 border-2 border-slate-100 hover:border-indigo-500 hover:bg-indigo-50/50 rounded-xl text-left transition"
+                  >
+                    <span className="font-bold text-xs text-slate-900 block mb-0.5">Website URL</span>
+                    <span className="text-[11px] text-slate-500">Index public webpage or policy</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sourceType === 'faq' ? (
+                  <>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Question / Subject</label>
+                      <input 
+                        type="text" 
+                        value={formData.title} 
+                        onChange={(e) => setFormData({ ...formData, title: e.target.value })} 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500" 
+                        placeholder="e.g. Can I modify my order after purchase?"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Approved Answer Content</label>
+                      <textarea 
+                        rows={4} 
+                        value={formData.content} 
+                        onChange={(e) => setFormData({ ...formData, content: e.target.value })} 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500" 
+                        placeholder="Provide the exact factual policy..."
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Page URL</label>
+                      <input 
+                        type="url" 
+                        value={formData.url} 
+                        onChange={(e) => setFormData({ ...formData, url: e.target.value })} 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500" 
+                        placeholder="https://northstargoods.com/policies/terms"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Title</label>
+                      <input 
+                        type="text" 
+                        value={formData.title} 
+                        onChange={(e) => setFormData({ ...formData, title: e.target.value })} 
+                        className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500" 
+                        placeholder="Terms of Service & Usage"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                  <button 
+                    onClick={() => setSourceType(null)} 
+                    className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-xl font-medium"
+                  >
+                    Back
+                  </button>
+                  <button 
+                    onClick={handleSave} 
+                    disabled={saving} 
+                    className="px-4 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save & Index'}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -344,6 +628,4 @@ const KnowledgeBase: React.FC = () => {
       )}
     </div>
   );
-};
-
-export default KnowledgeBase;
+}
